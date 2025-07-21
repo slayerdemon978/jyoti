@@ -60,15 +60,15 @@ def encode_data_to_circuits(data):
 X_train_circuits = encode_data_to_circuits(X_train_pca)
 X_test_circuits = encode_data_to_circuits(X_test_pca)
 
-# Build the model correctly
+# Build the model
 input_circuits = tf.keras.layers.Input(shape=(), dtype=tf.string, name='circuits_input')
-input_params = tf.keras.layers.Input(shape=(n_qubits,), dtype=tf.float32, name='params_input')
 
-# PQC layer (critical fix: pass inputs as a LIST)
-pqc_output = tfq.layers.PQC(circuit, readouts)([input_circuits, input_params])
+# PQC layer
+pqc = tfq.layers.PQC(circuit, readouts)
+pqc_output = pqc(input_circuits)
 output = tf.keras.layers.Dense(10, activation='softmax')(pqc_output)
 
-model = tf.keras.Model(inputs=[input_circuits, input_params], outputs=output)
+model = tf.keras.Model(inputs=input_circuits, outputs=output)
 model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 model.summary()
 
@@ -76,15 +76,11 @@ model.summary()
 batch_train = 500
 batch_val = 100
 
-# Create random weights for initial parameters
-train_weights = np.random.uniform(0, np.pi, size=(batch_train, n_qubits))
-val_weights = np.random.uniform(0, np.pi, size=(batch_val, n_qubits))
-
 history = model.fit(
-    x=[X_train_circuits[:batch_train], train_weights],  # Circuits and weights
+    x=X_train_circuits[:batch_train],
     y=Y_train_oh[:batch_train],
     validation_data=(
-        [X_test_circuits[:batch_val], val_weights],  # Validation circuits and weights
+        X_test_circuits[:batch_val],
         Y_test_oh[:batch_val]
     ),
     epochs=5,
@@ -93,17 +89,17 @@ history = model.fit(
 )
 
 # Evaluate the model on test data
-test_weights = np.random.uniform(0, np.pi, size=(len(X_test_circuits), n_qubits))
 test_loss, test_accuracy = model.evaluate(
-    [X_test_circuits, test_weights],
+    X_test_circuits,
     Y_test_oh,
     verbose=1
 )
 print(f"Test accuracy: {test_accuracy:.4f}")
 
-# Save the model
-model.save('quantum_fashion_mnist_model')
-print("Model saved successfully!")
+# We'll skip saving the model due to compatibility issues with TensorFlow Quantum
+# Instead, let's save the model weights
+model.save_weights('quantum_fashion_mnist_weights')
+print("Model weights saved successfully!")
 
 # Plot training history
 plt.figure(figsize=(12, 4))
@@ -125,3 +121,21 @@ plt.tight_layout()
 plt.savefig('training_history.png')
 plt.close()
 print("Training history plot saved as 'training_history.png'")
+
+# Let's also visualize some predictions
+n_samples = 5
+test_samples = X_test_circuits[:n_samples]
+predictions = model.predict(test_samples)
+predicted_classes = np.argmax(predictions, axis=1)
+actual_classes = np.argmax(Y_test_oh[:n_samples], axis=1)
+
+plt.figure(figsize=(15, 3))
+for i in range(n_samples):
+    plt.subplot(1, n_samples, i+1)
+    plt.imshow(X_test[i], cmap='gray')
+    plt.title(f"Pred: {predicted_classes[i]}\nTrue: {actual_classes[i]}")
+    plt.axis('off')
+plt.tight_layout()
+plt.savefig('predictions.png')
+plt.close()
+print("Predictions visualization saved as 'predictions.png'")
