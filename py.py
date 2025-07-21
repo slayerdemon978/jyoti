@@ -3,6 +3,7 @@ import tensorflow_quantum as tfq
 import cirq
 import sympy
 import numpy as np
+import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from tqdm.keras import TqdmCallback
 
@@ -49,8 +50,11 @@ print(circuit)
 def encode_data_to_circuits(data):
     """Convert classical data to quantum circuits."""
     circuits = []
-    for _ in range(data.shape[0]):
-        circuits.append(circuit)
+    for x in data:
+        # Create a circuit with the same structure but with data-specific parameters
+        param_resolver = dict(zip(inputs, x))
+        resolved_circuit = cirq.resolve_parameters(circuit, param_resolver)
+        circuits.append(resolved_circuit)
     return tfq.convert_to_tensor(circuits)
 
 X_train_circuits = encode_data_to_circuits(X_train_pca)
@@ -72,14 +76,52 @@ model.summary()
 batch_train = 500
 batch_val = 100
 
+# Create random weights for initial parameters
+train_weights = np.random.uniform(0, np.pi, size=(batch_train, n_qubits))
+val_weights = np.random.uniform(0, np.pi, size=(batch_val, n_qubits))
+
 history = model.fit(
-    x=[X_train_circuits[:batch_train],  # Circuits (as strings)
+    x=[X_train_circuits[:batch_train], train_weights],  # Circuits and weights
     y=Y_train_oh[:batch_train],
     validation_data=(
-        [X_test_circuits[:batch_val]],  # Validation circuits
+        [X_test_circuits[:batch_val], val_weights],  # Validation circuits and weights
         Y_test_oh[:batch_val]
     ),
     epochs=5,
     batch_size=32,
     callbacks=[TqdmCallback(verbose=1)]
 )
+
+# Evaluate the model on test data
+test_weights = np.random.uniform(0, np.pi, size=(len(X_test_circuits), n_qubits))
+test_loss, test_accuracy = model.evaluate(
+    [X_test_circuits, test_weights],
+    Y_test_oh,
+    verbose=1
+)
+print(f"Test accuracy: {test_accuracy:.4f}")
+
+# Save the model
+model.save('quantum_fashion_mnist_model')
+print("Model saved successfully!")
+
+# Plot training history
+plt.figure(figsize=(12, 4))
+plt.subplot(1, 2, 1)
+plt.plot(history.history['accuracy'], label='Training Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend()
+
+plt.subplot(1, 2, 2)
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend()
+
+plt.tight_layout()
+plt.savefig('training_history.png')
+plt.close()
+print("Training history plot saved as 'training_history.png'")
